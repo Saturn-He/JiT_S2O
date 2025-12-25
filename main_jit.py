@@ -10,15 +10,13 @@ import torch
 import torch.backends.cudnn as cudnn
 from torch.utils.tensorboard import SummaryWriter
 import torchvision.transforms as transforms
-import torchvision.datasets as datasets
-
-from util.crop import center_crop_arr
 import util.misc as misc
 
 import copy
 from engine_jit import train_one_epoch, evaluate
 
 from denoiser import Denoiser
+from util.datasets import PairedImageDirDataset
 
 
 def get_args_parser():
@@ -27,7 +25,7 @@ def get_args_parser():
     # architecture
     parser.add_argument('--model', default='JiT-B/16', type=str, metavar='MODEL',
                         help='Name of the model to train')
-    parser.add_argument('--img_size', default=256, type=int, help='Image size')
+    parser.add_argument('--img_size', default=512, type=int, help='Image size')
     parser.add_argument('--attn_dropout', type=float, default=0.0, help='Attention dropout rate')
     parser.add_argument('--proj_dropout', type=float, default=0.0, help='Projection dropout rate')
 
@@ -87,12 +85,18 @@ def get_args_parser():
                         help='Generation batch size')
 
     # dataset
-    parser.add_argument('--data_path', default='./data/imagenet', type=str,
-                        help='Path to the dataset')
-    parser.add_argument('--class_num', default=1000, type=int)
+    parser.add_argument('--sar_train_path', default='/data/yjy_data/dataset/SAR2Opt/train/A', type=str,
+                        help='Path to the SAR training dataset')
+    parser.add_argument('--opt_train_path', default='/data/yjy_data/dataset/SAR2Opt/train/B', type=str,
+                        help='Path to the optical training dataset')
+    parser.add_argument('--sar_test_path', default='/data/yjy_data/dataset/SAR2Opt/test/A', type=str,
+                        help='Path to the SAR testing dataset')
+    parser.add_argument('--opt_test_path', default='/data/yjy_data/dataset/SAR2Opt/test/B', type=str,
+                        help='Path to the optical testing dataset')
+    parser.add_argument('--class_num', default=1, type=int)
 
     # checkpointing
-    parser.add_argument('--output_dir', default='./output_dir',
+    parser.add_argument('--output_dir', default='/NAS_data/hjf/JiTcolor/checkpoints/season',
                         help='Directory to save outputs (empty for no saving)')
     parser.add_argument('--resume', default='',
                         help='Folder that contains checkpoint to resume from')
@@ -139,12 +143,16 @@ def main(args):
 
     # Data augmentation transforms
     transform_train = transforms.Compose([
-        transforms.Lambda(lambda img: center_crop_arr(img, args.img_size)),
+        transforms.Resize((args.img_size, args.img_size)),
         transforms.RandomHorizontalFlip(),
         transforms.PILToTensor()
     ])
 
-    dataset_train = datasets.ImageFolder(os.path.join(args.data_path, 'train'), transform=transform_train)
+    dataset_train = PairedImageDirDataset(
+        args.sar_train_path,
+        args.opt_train_path,
+        transform=transform_train,
+    )
     print(dataset_train)
 
     sampler_train = torch.utils.data.DistributedSampler(
