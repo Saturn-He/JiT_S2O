@@ -33,7 +33,7 @@ def get_args_parser():
     parser.add_argument('--epochs', default=650, type=int)
     parser.add_argument('--warmup_epochs', type=int, default=5, metavar='N',
                         help='Epochs to warm up LR')
-    parser.add_argument('--batch_size', default=128, type=int,
+    parser.add_argument('--batch_size', default=8, type=int,
                         help='Batch size per GPU (effective batch size = batch_size * # GPUs)')
     parser.add_argument('--lr', type=float, default=None, metavar='LR',
                         help='Learning rate (absolute)')
@@ -55,7 +55,7 @@ def get_args_parser():
     parser.add_argument('--t_eps', default=5e-2, type=float)
     parser.add_argument('--label_drop_prob', default=0.1, type=float)
 
-    parser.add_argument('--seed', default=0, type=int)
+    parser.add_argument('--seed', default=77, type=int)
     parser.add_argument('--start_epoch', default=0, type=int, metavar='N',
                         help='Starting epoch')
     parser.add_argument('--num_workers', default=12, type=int)
