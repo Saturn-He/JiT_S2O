@@ -96,7 +96,7 @@ def get_args_parser():
     parser.add_argument('--class_num', default=1, type=int)
 
     # checkpointing
-    parser.add_argument('--output_dir', default='/NAS_data/hjf/JiTcolor/checkpoints/season',
+    parser.add_argument('--output_dir', default='/NAS_data/hjf/JiTcolor/checkpoints/SAR2Opt',
                         help='Directory to save outputs (empty for no saving)')
     parser.add_argument('--resume', default='',
                         help='Folder that contains checkpoint to resume from')
