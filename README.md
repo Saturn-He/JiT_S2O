@@ -3,6 +3,11 @@
 Train：
 CUDA_VISIBLE_DEVICES=7 torchrun --nproc_per_node=1 main_jit.py
 
+Train with different lr:
+CUDA_VISIBLE_DEVICES=6 torchrun --nproc_per_node=1 --master_port=29505 main_jit.py \
+  --blr 1.6e-3 \
+  --output_dir /NAS_data/hjf/JiTcolor/checkpoints/SAR2Opt/lr5em5
+
 Inference：
 CUDA_VISIBLE_DEVICES=6 torchrun --nproc_per_node=1 --master_port=29503 main_jit.py \
   --evaluate_gen \
