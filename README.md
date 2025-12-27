@@ -16,7 +16,11 @@ CUDA_VISIBLE_DEVICES=6 torchrun --nproc_per_node=1 --master-port=29506 main_jit.
 
 ### Train on GF3:
 
-CUDA_VISIBLE_DEVICES=6 torchrun --nproc_per_node=1 --master-port=29506 main_jit.py --output_dir "/NAS_data/hjf/JiTcolor/checkpoints/GF3" --sar_train_path="/NAS_data/yjy/GF3_High_Res/trainA" --opt_train_path="/NAS_data/yjy/GF3_High_Res/trainB" --img_size=256
+CUDA_VISIBLE_DEVICES=7 torchrun --nproc_per_node=1 --master-port=29505 main_jit.py --output_dir "/NAS_data/hjf/JiTcolor/checkpoints/GF3/controlJiT/round1" --sar_train_path="/NAS_data/yjy/GF3_High_Res/trainA" --opt_train_path="/NAS_data/yjy/GF3_High_Res/trainB" --img_size=256
+
+### Train on SEN-SCENE:
+
+CUDA_VISIBLE_DEVICES=3 torchrun --nproc_per_node=1 --master-port=29504 main_jit.py --output_dir "/NAS_data/hjf/JiTcolor/checkpoints/scene/controlJiT/round1" --sar_train_path="/data/hjf/Dataset/SEN12_Scene/trainA" --opt_train_path="/data/hjf/Dataset/SEN12_Scene/trainB" --img_size=256
 
 ## Inference：
 
