@@ -521,32 +521,38 @@ class JiT(nn.Module):
 
 def JiT_B_16(**kwargs):
     return JiT(depth=12, hidden_size=768, num_heads=12,
-               bottleneck_dim=128, in_context_len=32, in_context_start=4, patch_size=16, **kwargs)
+               bottleneck_dim=128, in_context_len=32, in_context_start=4, patch_size=16,
+               control_depth=12, **kwargs)
 
 
 def JiT_B_32(**kwargs):
     return JiT(depth=12, hidden_size=768, num_heads=12,
-               bottleneck_dim=128, in_context_len=32, in_context_start=4, patch_size=32, **kwargs)
+               bottleneck_dim=128, in_context_len=32, in_context_start=4, patch_size=32,
+               control_depth=12, **kwargs)
 
 
 def JiT_L_16(**kwargs):
     return JiT(depth=24, hidden_size=1024, num_heads=16,
-               bottleneck_dim=128, in_context_len=32, in_context_start=8, patch_size=16, **kwargs)
+               bottleneck_dim=128, in_context_len=32, in_context_start=8, patch_size=16,
+               control_depth=24, **kwargs)
 
 
 def JiT_L_32(**kwargs):
     return JiT(depth=24, hidden_size=1024, num_heads=16,
-               bottleneck_dim=128, in_context_len=32, in_context_start=8, patch_size=32, **kwargs)
+               bottleneck_dim=128, in_context_len=32, in_context_start=8, patch_size=32,
+               control_depth=24, **kwargs)
 
 
 def JiT_H_16(**kwargs):
     return JiT(depth=32, hidden_size=1280, num_heads=16,
-               bottleneck_dim=256, in_context_len=32, in_context_start=10, patch_size=16, **kwargs)
+               bottleneck_dim=256, in_context_len=32, in_context_start=10, patch_size=16,
+               control_depth=32, **kwargs)
 
 
 def JiT_H_32(**kwargs):
     return JiT(depth=32, hidden_size=1280, num_heads=16,
-               bottleneck_dim=256, in_context_len=32, in_context_start=10, patch_size=32, **kwargs)
+               bottleneck_dim=256, in_context_len=32, in_context_start=10, patch_size=32,
+               control_depth=32, **kwargs)
 
 
 JiT_models = {
