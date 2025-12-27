@@ -202,6 +202,116 @@ class JiTBlock(nn.Module):
         return x
 
 
+class JiTControlBranch(nn.Module):
+    """
+    SAR control branch for JiT.
+    """
+    def __init__(
+        self,
+        input_size,
+        patch_size,
+        in_channels,
+        hidden_size,
+        depth,
+        num_heads,
+        mlp_ratio,
+        attn_drop,
+        proj_drop,
+        num_classes,
+        bottleneck_dim,
+        in_context_len,
+        in_context_start,
+        out_hidden_size,
+    ):
+        super().__init__()
+        self.hidden_size = hidden_size
+        self.out_hidden_size = out_hidden_size
+        self.in_context_len = in_context_len
+        self.in_context_start = in_context_start
+
+        self.t_embedder = TimestepEmbedder(hidden_size)
+        self.y_embedder = LabelEmbedder(num_classes, hidden_size)
+
+        self.x_embedder = BottleneckPatchEmbed(input_size, patch_size, in_channels, bottleneck_dim, hidden_size, bias=True)
+
+        num_patches = self.x_embedder.num_patches
+        self.pos_embed = nn.Parameter(torch.zeros(1, num_patches, hidden_size), requires_grad=False)
+
+        if self.in_context_len > 0:
+            self.in_context_posemb = nn.Parameter(torch.zeros(1, self.in_context_len, hidden_size), requires_grad=True)
+            torch.nn.init.normal_(self.in_context_posemb, std=.02)
+
+        half_head_dim = hidden_size // num_heads // 2
+        hw_seq_len = input_size // patch_size
+        self.feat_rope = VisionRotaryEmbeddingFast(
+            dim=half_head_dim,
+            pt_seq_len=hw_seq_len,
+            num_cls_token=0
+        )
+        self.feat_rope_incontext = VisionRotaryEmbeddingFast(
+            dim=half_head_dim,
+            pt_seq_len=hw_seq_len,
+            num_cls_token=self.in_context_len
+        )
+
+        self.blocks = nn.ModuleList([
+            JiTBlock(hidden_size, num_heads, mlp_ratio=mlp_ratio,
+                     attn_drop=attn_drop if (depth // 4 * 3 > i >= depth // 4) else 0.0,
+                     proj_drop=proj_drop if (depth // 4 * 3 > i >= depth // 4) else 0.0)
+            for i in range(depth)
+        ])
+
+        self.residual_proj = nn.Identity()
+        if hidden_size != out_hidden_size:
+            self.residual_proj = nn.Linear(hidden_size, out_hidden_size, bias=False)
+
+        self.initialize_weights()
+
+    def initialize_weights(self):
+        def _basic_init(module):
+            if isinstance(module, nn.Linear):
+                torch.nn.init.xavier_uniform_(module.weight)
+                if module.bias is not None:
+                    nn.init.constant_(module.bias, 0)
+        self.apply(_basic_init)
+
+        pos_embed = get_2d_sincos_pos_embed(self.pos_embed.shape[-1], int(self.x_embedder.num_patches ** 0.5))
+        self.pos_embed.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
+
+        w1 = self.x_embedder.proj1.weight.data
+        nn.init.xavier_uniform_(w1.view([w1.shape[0], -1]))
+        w2 = self.x_embedder.proj2.weight.data
+        nn.init.xavier_uniform_(w2.view([w2.shape[0], -1]))
+        nn.init.constant_(self.x_embedder.proj2.bias, 0)
+
+        nn.init.normal_(self.y_embedder.embedding_table.weight, std=0.02)
+
+        nn.init.normal_(self.t_embedder.mlp[0].weight, std=0.02)
+        nn.init.normal_(self.t_embedder.mlp[2].weight, std=0.02)
+
+        for block in self.blocks:
+            nn.init.constant_(block.adaLN_modulation[-1].weight, 0)
+            nn.init.constant_(block.adaLN_modulation[-1].bias, 0)
+
+    def forward(self, x, t, y):
+        t_emb = self.t_embedder(t)
+        y_emb = self.y_embedder(y)
+        c = t_emb + y_emb
+
+        x = self.x_embedder(x)
+        x += self.pos_embed
+
+        residuals = []
+        for i, block in enumerate(self.blocks):
+            if self.in_context_len > 0 and i == self.in_context_start:
+                in_context_tokens = y_emb.unsqueeze(1).repeat(1, self.in_context_len, 1)
+                in_context_tokens += self.in_context_posemb
+                x = torch.cat([in_context_tokens, x], dim=1)
+            x = block(x, c, self.feat_rope if i < self.in_context_start else self.feat_rope_incontext)
+            residuals.append(self.residual_proj(x))
+        return residuals
+
+
 class JiT(nn.Module):
     """
     Just image Transformer.
@@ -221,7 +331,10 @@ class JiT(nn.Module):
         num_classes=1000,
         bottleneck_dim=128,
         in_context_len=32,
-        in_context_start=8
+        in_context_start=8,
+        control_depth=None,
+        control_hidden_size=None,
+        control_scale=1.0
     ):
         super().__init__()
         self.in_channels = in_channels
@@ -274,6 +387,30 @@ class JiT(nn.Module):
             for i in range(depth)
         ])
 
+        if control_depth is None:
+            control_depth = max(1, depth // 2)
+        if control_hidden_size is None:
+            control_hidden_size = max(1, hidden_size // 2)
+        control_num_heads = max(1, num_heads * control_hidden_size // hidden_size)
+
+        self.control_branch = JiTControlBranch(
+            input_size=input_size,
+            patch_size=patch_size,
+            in_channels=1,
+            hidden_size=control_hidden_size,
+            depth=control_depth,
+            num_heads=control_num_heads,
+            mlp_ratio=mlp_ratio,
+            attn_drop=attn_drop,
+            proj_drop=proj_drop,
+            num_classes=num_classes,
+            bottleneck_dim=bottleneck_dim,
+            in_context_len=in_context_len,
+            in_context_start=min(in_context_start, max(0, control_depth - 1)),
+            out_hidden_size=hidden_size,
+        )
+        self.control_scale = nn.Parameter(torch.tensor(float(control_scale)))
+
         # linear predict
         self.final_layer = FinalLayer(hidden_size, patch_size, self.out_channels)
 
@@ -317,6 +454,17 @@ class JiT(nn.Module):
         nn.init.constant_(self.final_layer.linear.weight, 0)
         nn.init.constant_(self.final_layer.linear.bias, 0)
 
+    @staticmethod
+    def _align_control_residuals(residuals, target_len):
+        if len(residuals) == target_len:
+            return residuals
+        if len(residuals) == 0:
+            return [None for _ in range(target_len)]
+        if len(residuals) == 1:
+            return [residuals[0] for _ in range(target_len)]
+        indices = torch.linspace(0, len(residuals) - 1, target_len).long().tolist()
+        return [residuals[i] for i in indices]
+    
     def unpatchify(self, x, p):
         """
         x: (N, T, patch_size**2 * C)
@@ -331,17 +479,23 @@ class JiT(nn.Module):
         imgs = x.reshape(shape=(x.shape[0], c, h * p, h * p))
         return imgs
 
-    def forward(self, x, t, y):
+    def forward(self, x, sar_img, t, y):
         """
         x: (N, C, H, W)
+        sar_img: (N, 1, H, W)
         t: (N,)
         y: (N,)
         """
+        if sar_img is None:
+            sar_img = torch.zeros(x.size(0), 1, self.input_size, self.input_size, device=x.device, dtype=x.dtype)
         # class and time embeddings
         t_emb = self.t_embedder(t)
         y_emb = self.y_embedder(y)
         c = t_emb + y_emb
 
+        control_residuals = self.control_branch(sar_img, t, y)
+        control_residuals = self._align_control_residuals(control_residuals, len(self.blocks))
+        
         # forward JiT
         x = self.x_embedder(x)
         x += self.pos_embed
@@ -352,6 +506,9 @@ class JiT(nn.Module):
                 in_context_tokens = y_emb.unsqueeze(1).repeat(1, self.in_context_len, 1)
                 in_context_tokens += self.in_context_posemb
                 x = torch.cat([in_context_tokens, x], dim=1)
+            residual = control_residuals[i]
+            if residual is not None:
+                x = x + self.control_scale * residual
             x = block(x, c, self.feat_rope if i < self.in_context_start else self.feat_rope_incontext)
 
         x = x[:, self.in_context_len:]
