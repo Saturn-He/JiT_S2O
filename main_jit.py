@@ -103,6 +103,8 @@ def get_args_parser():
     parser.add_argument('--save_last_freq', type=int, default=5,
                         help='Frequency (in epochs) to save checkpoints')
     parser.add_argument('--log_freq', default=100, type=int)
+    parser.add_argument('--keep_outputs', action='store_true',
+                        help='Keep generated outputs after evaluation')
     parser.add_argument('--device', default='cuda',
                         help='Device to use for training/testing')
 
