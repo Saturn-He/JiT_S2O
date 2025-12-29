@@ -21,6 +21,7 @@ class Denoiser(nn.Module):
         self.num_classes = args.class_num
 
         self.label_drop_prob = args.label_drop_prob
+        self.hint_loss_weight = args.hint_loss_weight
         self.P_mean = args.P_mean
         self.P_std = args.P_std
         self.t_eps = args.t_eps
@@ -47,7 +48,7 @@ class Denoiser(nn.Module):
         z = torch.randn(n, device=device) * self.P_std + self.P_mean
         return torch.sigmoid(z)
 
-    def forward(self, opt_img, sar_img, labels=None):
+    def forward(self, opt_img, sar_img, labels=None, hint_input=None, hint_mask=None):
         if labels is None:
             labels = torch.zeros(opt_img.size(0), device=opt_img.device, dtype=torch.long)
         labels_dropped = self.drop_labels(labels) if self.training else labels
@@ -58,11 +59,14 @@ class Denoiser(nn.Module):
         z = t * opt_img + (1 - t) * e
         v = (opt_img - z) / (1 - t).clamp_min(self.t_eps)
 
-        x_pred = self.net(z, t.flatten(), labels_dropped, sar_img)
+        x_pred = self.net(z, t.flatten(), labels_dropped, sar_img, hint_input)
         v_pred = (x_pred - z) / (1 - t).clamp_min(self.t_eps)
 
         # l2 loss
         loss = (v - v_pred) ** 2
+        if hint_mask is not None:
+            weight = 1.0 + self.hint_loss_weight * hint_mask
+            loss = loss * weight
         loss = loss.mean(dim=(1, 2, 3)).mean()
 
         return loss
