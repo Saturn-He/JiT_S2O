@@ -37,6 +37,26 @@ class BottleneckPatchEmbed(nn.Module):
         return x
 
 
+class SARPatchEncoder(nn.Module):
+    """SAR image to patch embedding."""
+    def __init__(self, img_size=224, patch_size=16, in_chans=1, embed_dim=768, bias=True):
+        super().__init__()
+        img_size = (img_size, img_size)
+        patch_size = (patch_size, patch_size)
+        num_patches = (img_size[1] // patch_size[1]) * (img_size[0] // patch_size[0])
+        self.img_size = img_size
+        self.patch_size = patch_size
+        self.num_patches = num_patches
+        self.proj = nn.Conv2d(in_chans, embed_dim, kernel_size=patch_size, stride=patch_size, bias=bias)
+
+    def forward(self, x):
+        B, C, H, W = x.shape
+        assert H == self.img_size[0] and W == self.img_size[1], \
+            f"Input image size ({H}*{W}) doesn't match model ({self.img_size[0]}*{self.img_size[1]})."
+        x = self.proj(x).flatten(2).transpose(1, 2)
+        return x
+
+
 class TimestepEmbedder(nn.Module):
     """
     Embeds scalar timesteps into vector representations.
@@ -138,6 +158,45 @@ class Attention(nn.Module):
         return x
 
 
+class CrossAttention(nn.Module):
+    def __init__(self, dim, num_heads=8, qkv_bias=True, qk_norm=True, attn_drop=0., proj_drop=0.):
+        super().__init__()
+        self.num_heads = num_heads
+        head_dim = dim // num_heads
+
+        self.q_norm = RMSNorm(head_dim) if qk_norm else nn.Identity()
+        self.k_norm = RMSNorm(head_dim) if qk_norm else nn.Identity()
+
+        self.q = nn.Linear(dim, dim, bias=qkv_bias)
+        self.kv = nn.Linear(dim, dim * 2, bias=qkv_bias)
+        self.attn_drop = nn.Dropout(attn_drop)
+        self.proj = nn.Linear(dim, dim)
+        self.proj_drop = nn.Dropout(proj_drop)
+
+    def forward(self, x, context, rope=None, context_rope=None):
+        B, N, C = x.shape
+        q = self.q(x).reshape(B, N, self.num_heads, C // self.num_heads).permute(0, 2, 1, 3)
+
+        Bc, Nc, Cc = context.shape
+        kv = self.kv(context).reshape(Bc, Nc, 2, self.num_heads, Cc // self.num_heads).permute(2, 0, 3, 1, 4)
+        k, v = kv[0], kv[1]
+
+        q = self.q_norm(q)
+        k = self.k_norm(k)
+
+        if rope is not None:
+            q = rope(q)
+        if context_rope is not None:
+            k = context_rope(k)
+
+        x = scaled_dot_product_attention(q, k, v, dropout_p=self.attn_drop.p if self.training else 0.)
+
+        x = x.transpose(1, 2).reshape(B, N, C)
+        x = self.proj(x)
+        x = self.proj_drop(x)
+        return x
+
+
 class SwiGLUFFN(nn.Module):
     def __init__(
         self,
@@ -186,6 +245,10 @@ class JiTBlock(nn.Module):
         self.norm1 = RMSNorm(hidden_size, eps=1e-6)
         self.attn = Attention(hidden_size, num_heads=num_heads, qkv_bias=True, qk_norm=True,
                               attn_drop=attn_drop, proj_drop=proj_drop)
+        self.norm_ca = RMSNorm(hidden_size, eps=1e-6)
+        self.cross_attn = CrossAttention(hidden_size, num_heads=num_heads, qkv_bias=True, qk_norm=True,
+                                         attn_drop=attn_drop, proj_drop=proj_drop)
+        self.ca_scale = nn.Parameter(torch.zeros(1))
         self.norm2 = RMSNorm(hidden_size, eps=1e-6)
         mlp_hidden_dim = int(hidden_size * mlp_ratio)
         self.mlp = SwiGLUFFN(hidden_size, mlp_hidden_dim, drop=proj_drop)
@@ -195,9 +258,11 @@ class JiTBlock(nn.Module):
         )
 
     @torch.compile
-    def forward(self, x,  c, feat_rope=None):
+    def forward(self, x,  c, feat_rope=None, sar_tokens=None, sar_rope=None):
         shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = self.adaLN_modulation(c).chunk(6, dim=-1)
         x = x + gate_msa.unsqueeze(1) * self.attn(modulate(self.norm1(x), shift_msa, scale_msa), rope=feat_rope)
+        if sar_tokens is not None:
+            x = x + self.ca_scale * self.cross_attn(self.norm_ca(x), sar_tokens, rope=feat_rope, context_rope=sar_rope)
         x = x + gate_mlp.unsqueeze(1) * self.mlp(modulate(self.norm2(x), shift_mlp, scale_mlp))
         return x
 
@@ -242,6 +307,7 @@ class JiT(nn.Module):
 
         # linear embed
         self.x_embedder = BottleneckPatchEmbed(input_size, patch_size, in_channels, bottleneck_dim, hidden_size, bias=True)
+        self.sar_embedder = SARPatchEncoder(input_size, patch_size, in_chans=1, embed_dim=hidden_size, bias=True)
 
         # use fixed sin-cos embedding
         num_patches = self.x_embedder.num_patches
@@ -299,6 +365,11 @@ class JiT(nn.Module):
         nn.init.xavier_uniform_(w2.view([w2.shape[0], -1]))
         nn.init.constant_(self.x_embedder.proj2.bias, 0)
 
+        w_sar = self.sar_embedder.proj.weight.data
+        nn.init.xavier_uniform_(w_sar.view([w_sar.shape[0], -1]))
+        if self.sar_embedder.proj.bias is not None:
+            nn.init.constant_(self.sar_embedder.proj.bias, 0)        
+        
         # Initialize label embedding table:
         nn.init.normal_(self.y_embedder.embedding_table.weight, std=0.02)
 
@@ -331,7 +402,7 @@ class JiT(nn.Module):
         imgs = x.reshape(shape=(x.shape[0], c, h * p, h * p))
         return imgs
 
-    def forward(self, x, t, y):
+    def forward(self, x, t, y, sar_img=None):
         """
         x: (N, C, H, W)
         t: (N,)
@@ -345,6 +416,10 @@ class JiT(nn.Module):
         # forward JiT
         x = self.x_embedder(x)
         x += self.pos_embed
+        sar_tokens = None
+        if sar_img is not None:
+            sar_tokens = self.sar_embedder(sar_img)
+            sar_tokens = sar_tokens + self.pos_embed
 
         for i, block in enumerate(self.blocks):
             # in-context
@@ -352,7 +427,8 @@ class JiT(nn.Module):
                 in_context_tokens = y_emb.unsqueeze(1).repeat(1, self.in_context_len, 1)
                 in_context_tokens += self.in_context_posemb
                 x = torch.cat([in_context_tokens, x], dim=1)
-            x = block(x, c, self.feat_rope if i < self.in_context_start else self.feat_rope_incontext)
+            feat_rope = self.feat_rope if i < self.in_context_start else self.feat_rope_incontext
+            x = block(x, c, feat_rope, sar_tokens=sar_tokens, sar_rope=self.feat_rope)
 
         x = x[:, self.in_context_len:]
 
