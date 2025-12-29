@@ -4,6 +4,12 @@
 
 CUDA_VISIBLE_DEVICES=7 torchrun --nproc_per_node=1 main_jit.py
 
+CUDA_VISIBLE_DEVICES=7 torchrun --nproc_per_node=1 --master-port=29506 main_jit.py \
+  --output_dir "/NAS_data/hjf/JiTcolor/checkpoints/SAR2Opt/caJiT/round1" \
+  --sar_train_path "/NAS_data/yjy/Parallel-GAN-main/Parallel-GAN-main/datasets/sar2opt/trainA" \
+  --opt_train_path "/NAS_data/yjy/Parallel-GAN-main/Parallel-GAN-main/datasets/sar2opt/trainB" \
+  --img_size 512
+
 ### Train with different lr:
 
 CUDA_VISIBLE_DEVICES=6 torchrun --nproc_per_node=1 --master_port=29505 main_jit.py \
