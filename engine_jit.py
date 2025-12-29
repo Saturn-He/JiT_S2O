@@ -28,7 +28,9 @@ def train_one_epoch(model, model_without_ddp, data_loader, optimizer, device, ep
     if log_writer is not None:
         print('log_dir: {}'.format(log_writer.log_dir))
 
-    for data_iter_step, (sar_img, opt_img) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
+    for data_iter_step, (sar_img, opt_img, hint_color, hint_mask) in enumerate(
+        metric_logger.log_every(data_loader, print_freq, header)
+    ):
         # per iteration (instead of per epoch) lr scheduler
         lr_sched.adjust_learning_rate(optimizer, data_iter_step / len(data_loader) + epoch, args)
 
@@ -37,10 +39,14 @@ def train_one_epoch(model, model_without_ddp, data_loader, optimizer, device, ep
         sar_img = sar_img * 2.0 - 1.0
         opt_img = opt_img.to(device, non_blocking=True).to(torch.float32).div_(255)
         opt_img = opt_img * 2.0 - 1.0
+        hint_color = hint_color.to(device, non_blocking=True).to(torch.float32).div_(255)
+        hint_color = hint_color * 2.0 - 1.0
+        hint_mask = hint_mask.to(device, non_blocking=True).to(torch.float32)
+        hint_input = torch.cat([hint_color, hint_mask], dim=1)
         labels = torch.zeros(opt_img.size(0), device=device, dtype=torch.long)
 
         with torch.amp.autocast('cuda', dtype=torch.bfloat16):
-            loss = model(opt_img, sar_img, labels)
+            loss = model(opt_img, sar_img, labels, hint_input=hint_input, hint_mask=hint_mask)
 
         loss_value = loss.item()
         if not math.isfinite(loss_value):
