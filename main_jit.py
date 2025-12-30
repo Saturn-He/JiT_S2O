@@ -54,6 +54,16 @@ def get_args_parser():
     parser.add_argument('--noise_scale', default=1.0, type=float)
     parser.add_argument('--t_eps', default=5e-2, type=float)
     parser.add_argument('--label_drop_prob', default=0.1, type=float)
+    parser.add_argument('--hint_dropout_prob', default=0.5, type=float,
+                        help='Probability to drop all expert hints during training')
+    parser.add_argument('--hint_max_ratio', default=0.05, type=float,
+                        help='Max ratio of pixels covered by hints')
+    parser.add_argument('--hint_color_thresh', default=0.1, type=float,
+                        help='Color distance threshold for object-level hints (in [0,1] RGB)')
+    parser.add_argument('--hint_num_regions', default=1, type=int,
+                        help='Number of semantic hint regions to sample per image')
+    parser.add_argument('--hint_loss_weight', default=2.0, type=float,
+                        help='Extra loss weight on hint pixels')
 
     parser.add_argument('--seed', default=77, type=int)
     parser.add_argument('--start_epoch', default=0, type=int, metavar='N',
@@ -154,6 +164,10 @@ def main(args):
         args.sar_train_path,
         args.opt_train_path,
         transform=transform_train,
+        hint_dropout_prob=args.hint_dropout_prob,
+        hint_max_ratio=args.hint_max_ratio,
+        hint_color_thresh=args.hint_color_thresh,
+        hint_num_regions=args.hint_num_regions,
     )
     print(dataset_train)
 
