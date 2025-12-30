@@ -57,6 +57,26 @@ class SARPatchEncoder(nn.Module):
         return x
 
 
+class HintPatchEncoder(nn.Module):
+    """Hint map to patch embedding (RGB hint + mask)."""
+    def __init__(self, img_size=224, patch_size=16, in_chans=4, embed_dim=768, bias=True):
+        super().__init__()
+        img_size = (img_size, img_size)
+        patch_size = (patch_size, patch_size)
+        num_patches = (img_size[1] // patch_size[1]) * (img_size[0] // patch_size[0])
+        self.img_size = img_size
+        self.patch_size = patch_size
+        self.num_patches = num_patches
+        self.proj = nn.Conv2d(in_chans, embed_dim, kernel_size=patch_size, stride=patch_size, bias=bias)
+
+    def forward(self, x):
+        B, C, H, W = x.shape
+        assert H == self.img_size[0] and W == self.img_size[1], \
+            f"Input image size ({H}*{W}) doesn't match model ({self.img_size[0]}*{self.img_size[1]})."
+        x = self.proj(x).flatten(2).transpose(1, 2)
+        return x
+
+
 class TimestepEmbedder(nn.Module):
     """
     Embeds scalar timesteps into vector representations.
@@ -308,6 +328,7 @@ class JiT(nn.Module):
         # linear embed
         self.x_embedder = BottleneckPatchEmbed(input_size, patch_size, in_channels, bottleneck_dim, hidden_size, bias=True)
         self.sar_embedder = SARPatchEncoder(input_size, patch_size, in_chans=1, embed_dim=hidden_size, bias=True)
+        self.hint_embedder = HintPatchEncoder(input_size, patch_size, in_chans=4, embed_dim=hidden_size, bias=True)
 
         # use fixed sin-cos embedding
         num_patches = self.x_embedder.num_patches
@@ -369,6 +390,11 @@ class JiT(nn.Module):
         nn.init.xavier_uniform_(w_sar.view([w_sar.shape[0], -1]))
         if self.sar_embedder.proj.bias is not None:
             nn.init.constant_(self.sar_embedder.proj.bias, 0)        
+
+        w_hint = self.hint_embedder.proj.weight.data
+        nn.init.xavier_uniform_(w_hint.view([w_hint.shape[0], -1]))
+        if self.hint_embedder.proj.bias is not None:
+            nn.init.constant_(self.hint_embedder.proj.bias, 0)
         
         # Initialize label embedding table:
         nn.init.normal_(self.y_embedder.embedding_table.weight, std=0.02)
@@ -402,7 +428,7 @@ class JiT(nn.Module):
         imgs = x.reshape(shape=(x.shape[0], c, h * p, h * p))
         return imgs
 
-    def forward(self, x, t, y, sar_img=None):
+    def forward(self, x, t, y, sar_img=None, hint_input=None):
         """
         x: (N, C, H, W)
         t: (N,)
@@ -417,9 +443,20 @@ class JiT(nn.Module):
         x = self.x_embedder(x)
         x += self.pos_embed
         sar_tokens = None
+        context_rope = None
         if sar_img is not None:
             sar_tokens = self.sar_embedder(sar_img)
             sar_tokens = sar_tokens + self.pos_embed
+            context_rope = self.feat_rope
+        if hint_input is not None:
+            hint_tokens = self.hint_embedder(hint_input)
+            hint_tokens = hint_tokens + self.pos_embed
+            if sar_tokens is None:
+                sar_tokens = hint_tokens
+                context_rope = self.feat_rope
+            else:
+                sar_tokens = torch.cat([sar_tokens, hint_tokens], dim=1)
+                context_rope = None
 
         for i, block in enumerate(self.blocks):
             # in-context
@@ -428,7 +465,7 @@ class JiT(nn.Module):
                 in_context_tokens += self.in_context_posemb
                 x = torch.cat([in_context_tokens, x], dim=1)
             feat_rope = self.feat_rope if i < self.in_context_start else self.feat_rope_incontext
-            x = block(x, c, feat_rope, sar_tokens=sar_tokens, sar_rope=self.feat_rope)
+            x = block(x, c, feat_rope, sar_tokens=sar_tokens, sar_rope=context_rope)
 
         x = x[:, self.in_context_len:]
 
