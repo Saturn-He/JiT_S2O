@@ -33,7 +33,7 @@ CUDA_VISIBLE_DEVICES=7 torchrun --nproc_per_node=1 --master-port=29509 main_jit.
   --hint_num_regions 4 \
   --hint_loss_weight 2.0
 
-CUDA_VISIBLE_DEVICES=5,6,7 torchrun --nproc_per_node=3 --master-port=29509 main_jit.py \
+CUDA_VISIBLE_DEVICES=2,3,5,7 torchrun --nproc_per_node=4 --master-port=29509 main_jit.py \
   --output_dir "/NAS_data/hjf/JiTcolor/checkpoints/SAR2Opt/caJiT_CP/round1" \
   --sar_train_path "/NAS_data/yjy/Parallel-GAN-main/Parallel-GAN-main/datasets/sar2opt/trainA" \
   --opt_train_path "/NAS_data/yjy/Parallel-GAN-main/Parallel-GAN-main/datasets/sar2opt/trainB" \
@@ -42,7 +42,9 @@ CUDA_VISIBLE_DEVICES=5,6,7 torchrun --nproc_per_node=3 --master-port=29509 main_
   --hint_max_ratio 0.05 \
   --hint_color_thresh 0.1 \
   --hint_num_regions 4 \
-  --hint_loss_weight 2.0
+  --hint_loss_weight 2.0 \
+  --batch_size 2
+
 
 
 ## Train with model JiT-L/16
