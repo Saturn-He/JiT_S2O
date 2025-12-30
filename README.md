@@ -18,7 +18,16 @@ CUDA_VISIBLE_DEVICES=6 torchrun --nproc_per_node=1 --master_port=29505 main_jit.
 
 ### Train on GF3:
 
-CUDA_VISIBLE_DEVICES=6 torchrun --nproc_per_node=1 --master-port=29506 main_jit.py --output_dir "/NAS_data/hjf/JiTcolor/checkpoints/GF3" --sar_train_path="/NAS_data/yjy/GF3_High_Res/trainA" --opt_train_path="/NAS_data/yjy/GF3_High_Res/trainB" --sar_test_path="/NAS_data/yjy/GF3_High_Res/testA" --opt_test_path="/NAS_data/yjy/GF3_High_Res/testB" --img_size=256
+CUDA_VISIBLE_DEVICES=7 torchrun --nproc_per_node=1 --master-port=29501 main_jit.py --output_dir "/NAS_data/hjf/JiTcolor/checkpoints/GF3/caJiT/round1" --sar_train_path="/NAS_data/yjy/GF3_High_Res/trainA" --opt_train_path="/NAS_data/yjy/GF3_High_Res/trainB" --img_size=256 --resume "/NAS_data/hjf/JiTcolor/checkpoints/GF3/caJiT/round1"
+
+### Train on SAR2Opt:
+
+CUDA_VISIBLE_DEVICES=7 torchrun --nproc_per_node=1 --master-port=29506 main_jit.py   --output_dir "/NAS_data/hjf/JiTcolor/checkpoints/SAR2Opt/caJiT/round1"   --sar_train_path "/NAS_data/yjy/Parallel-GAN-main/Parallel-GAN-main/datasets/sar2opt/trainA"   --opt_train_path "/NAS_data/yjy/Parallel-GAN-main/Parallel-GAN-main/datasets/sar2opt/trainB"   --img_size 512 --resume "/NAS_data/hjf/JiTcolor/checkpoints/SAR2Opt/caJiT/round1"
+
+### Train on SEN-SCENE:
+
+CUDA_VISIBLE_DEVICES=7 torchrun --nproc_per_node=1 --master-port=29504 main_jit.py --output_dir "/NAS_data/hjf/JiTcolor/checkpoints/scene/caJiT/round1" --sar_train_path="/data/hjf/Dataset/SEN12_Scene/trainA" --opt_train_path="/data/hjf/Dataset/SEN12_Scene/trainB" --img_size=256 --resume "/NAS_data/hjf/JiTcolor/checkpoints/scene/caJiT/round1"
+
 
 ## Train with model JiT-L/16
 
@@ -28,7 +37,8 @@ CUDA_VISIBLE_DEVICES=5 torchrun --nproc_per_node=1 --master-port=29508 main_jit.
   --batch_size 4 \
   --output_dir "/NAS_data/hjf/JiTcolor/checkpoints/SAR2Opt/caJiT/JiT-L16" \
   --sar_train_path "/NAS_data/yjy/Parallel-GAN-main/Parallel-GAN-main/datasets/sar2opt/trainA" \
-  --opt_train_path "/NAS_data/yjy/Parallel-GAN-main/Parallel-GAN-main/datasets/sar2opt/trainB"
+  --opt_train_path "/NAS_data/yjy/Parallel-GAN-main/Parallel-GAN-main/datasets/sar2opt/trainB" \
+  --resume "/NAS_data/hjf/JiTcolor/checkpoints/SAR2Opt/caJiT/JiT-L16"
 
 
 ## Train with model JiT-H/16
@@ -39,7 +49,8 @@ CUDA_VISIBLE_DEVICES=6 torchrun --nproc_per_node=1 --master-port=29507 main_jit.
   --batch_size 2 \
   --output_dir "/NAS_data/hjf/JiTcolor/checkpoints/SAR2Opt/caJiT/JiT-H16" \
   --sar_train_path "/NAS_data/yjy/Parallel-GAN-main/Parallel-GAN-main/datasets/sar2opt/trainA" \
-  --opt_train_path "/NAS_data/yjy/Parallel-GAN-main/Parallel-GAN-main/datasets/sar2opt/trainB"
+  --opt_train_path "/NAS_data/yjy/Parallel-GAN-main/Parallel-GAN-main/datasets/sar2opt/trainB" \
+  --resume "/NAS_data/hjf/JiTcolor/checkpoints/SAR2Opt/caJiT/JiT-H16"
 
 
 ## Inference：
