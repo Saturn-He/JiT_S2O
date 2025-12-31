@@ -13,7 +13,7 @@ import util.lr_sched as lr_sched
 import torch_fidelity
 import copy
 
-from util.datasets import ImageDirDataset
+from util.datasets import ImageDirDataset, PairedImageDirDataset
 
 
 def train_one_epoch(model, model_without_ddp, data_loader, optimizer, device, epoch, log_writer=None, args=None):
@@ -84,7 +84,21 @@ def evaluate(model_without_ddp, args, epoch, batch_size=64, log_writer=None):
         transforms.Resize((args.img_size, args.img_size)),
         transforms.PILToTensor()
     ])
-    sar_dataset = ImageDirDataset(args.sar_test_path, transform=transform_eval, mode="L")
+    if args.use_hint_infer:
+        if not args.opt_test_path:
+            raise ValueError("opt_test_path is required when use_hint_infer is enabled.")
+        sar_dataset = PairedImageDirDataset(
+            args.sar_test_path,
+            args.opt_test_path,
+            transform=transform_eval,
+            hint_dropout_prob=args.hint_dropout_prob,
+            hint_max_ratio=args.hint_max_ratio,
+            hint_color_thresh=args.hint_color_thresh,
+            hint_num_regions=args.hint_num_regions,
+            return_names=True,
+        )
+    else:
+        sar_dataset = ImageDirDataset(args.sar_test_path, transform=transform_eval, mode="L")
     sampler = torch.utils.data.DistributedSampler(
         sar_dataset, num_replicas=world_size, rank=local_rank, shuffle=False
     )
@@ -121,18 +135,29 @@ def evaluate(model_without_ddp, args, epoch, batch_size=64, log_writer=None):
     model_without_ddp.load_state_dict(ema_state_dict)
 
     img_count = 0
-    for i, (sar_img, sar_names) in enumerate(data_loader):
+    for i, batch in enumerate(data_loader):
         if img_count >= num_images:
             break
         print("Generation step {}/{}".format(i, num_steps))
+
+        if args.use_hint_infer:
+            sar_img, _opt_img, hint_color, hint_mask, sar_names = batch
+        else:
+            sar_img, sar_names = batch
 
         sar_img = sar_img.to(torch.device(args.device))
         sar_img = sar_img.to(torch.float32).div_(255)
         sar_img = sar_img * 2.0 - 1.0
         labels_gen = torch.zeros(sar_img.size(0), device=sar_img.device, dtype=torch.long)
+        hint_input = None
+        if args.use_hint_infer:
+            hint_color = hint_color.to(args.device, non_blocking=True).to(torch.float32).div_(255)
+            hint_color = hint_color * 2.0 - 1.0
+            hint_mask = hint_mask.to(args.device, non_blocking=True).to(torch.float32)
+            hint_input = torch.cat([hint_color, hint_mask], dim=1)
 
         with torch.amp.autocast('cuda', dtype=torch.bfloat16):
-            sampled_images = model_without_ddp.generate(sar_img, labels_gen)
+            sampled_images = model_without_ddp.generate(sar_img, labels_gen, hint_input=hint_input)
 
         torch.distributed.barrier()
 
