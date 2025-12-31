@@ -47,6 +47,7 @@ class PairedImageDirDataset(Dataset):
         hint_max_ratio=0.05,
         hint_color_thresh=0.1,
         hint_num_regions=1,
+        return_names=False,
     ):
         self.sar_root = sar_root
         self.opt_root = opt_root
@@ -55,6 +56,7 @@ class PairedImageDirDataset(Dataset):
         self.hint_max_ratio = hint_max_ratio
         self.hint_color_thresh = hint_color_thresh
         self.hint_num_regions = hint_num_regions
+        self.return_names = return_names
         self.sar_files = _list_images(sar_root)
         self.opt_files = _list_images(opt_root)
         if len(self.sar_files) != len(self.opt_files):
@@ -113,4 +115,6 @@ class PairedImageDirDataset(Dataset):
             sar_img = self.transform(sar_img)
             opt_img = self.transform(opt_img)
         hint_color, hint_mask = self._build_hints(opt_img)
+        if self.return_names:
+            return sar_img, opt_img, hint_color, hint_mask, sar_path.name
         return sar_img, opt_img, hint_color, hint_mask
