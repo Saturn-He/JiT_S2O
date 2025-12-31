@@ -72,7 +72,7 @@ class Denoiser(nn.Module):
         return loss
 
     @torch.no_grad()
-    def generate(self, sar_img, labels=None):
+    def generate(self, sar_img, labels=None, hint_input=None):
         if labels is None:
             labels = torch.zeros(sar_img.size(0), device=sar_img.device, dtype=torch.long)
         device = sar_img.device
@@ -91,19 +91,19 @@ class Denoiser(nn.Module):
         for i in range(self.steps - 1):
             t = timesteps[i]
             t_next = timesteps[i + 1]
-            z = stepper(z, t, t_next, labels, sar_img)
+            z = stepper(z, t, t_next, labels, sar_img, hint_input=hint_input)
         # last step euler
-        z = self._euler_step(z, timesteps[-2], timesteps[-1], labels, sar_img)
+        z = self._euler_step(z, timesteps[-2], timesteps[-1], labels, sar_img, hint_input=hint_input)
         return z
 
     @torch.no_grad()
-    def _forward_sample(self, z, t, labels, sar_img):
+    def _forward_sample(self, z, t, labels, sar_img, hint_input=None):
         # conditional
-        x_cond = self.net(z, t.flatten(), labels, sar_img)
+        x_cond = self.net(z, t.flatten(), labels, sar_img, hint_input)
         v_cond = (x_cond - z) / (1.0 - t).clamp_min(self.t_eps)
 
         # unconditional
-        x_uncond = self.net(z, t.flatten(), torch.full_like(labels, self.num_classes), sar_img)
+        x_uncond = self.net(z, t.flatten(), torch.full_like(labels, self.num_classes), sar_img, hint_input)
         v_uncond = (x_uncond - z) / (1.0 - t).clamp_min(self.t_eps)
 
         # cfg interval
@@ -114,17 +114,17 @@ class Denoiser(nn.Module):
         return v_uncond + cfg_scale_interval * (v_cond - v_uncond)
 
     @torch.no_grad()
-    def _euler_step(self, z, t, t_next, labels, sar_img):
-        v_pred = self._forward_sample(z, t, labels, sar_img)
+    def _euler_step(self, z, t, t_next, labels, sar_img, hint_input=None):
+        v_pred = self._forward_sample(z, t, labels, sar_img, hint_input=hint_input)
         z_next = z + (t_next - t) * v_pred
         return z_next
 
     @torch.no_grad()
-    def _heun_step(self, z, t, t_next, labels, sar_img):
-        v_pred_t = self._forward_sample(z, t, labels, sar_img)
+    def _heun_step(self, z, t, t_next, labels, sar_img, hint_input=None):
+        v_pred_t = self._forward_sample(z, t, labels, sar_img, hint_input=hint_input)
 
         z_next_euler = z + (t_next - t) * v_pred_t
-        v_pred_t_next = self._forward_sample(z_next_euler, t_next, labels, sar_img)
+        v_pred_t_next = self._forward_sample(z_next_euler, t_next, labels, sar_img, hint_input=hint_input)
 
         v_pred = 0.5 * (v_pred_t + v_pred_t_next)
         z_next = z + (t_next - t) * v_pred
