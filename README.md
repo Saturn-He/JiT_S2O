@@ -16,6 +16,14 @@ CUDA_VISIBLE_DEVICES=6 torchrun --nproc_per_node=1 --master-port=29506 main_jit.
 
 CUDA_VISIBLE_DEVICES=2 torchrun --nproc_per_node=1 --master-port=29506 main_jit.py --output_dir "/NAS_data/hjf/JiTcolor/checkpoints/SAR2Opt/controlJiT/round1" --sar_train_path="/NAS_data/yjy/Parallel-GAN-main/Parallel-GAN-main/datasets/sar2opt/trainA" --opt_train_path="/NAS_data/yjy/Parallel-GAN-main/Parallel-GAN-main/datasets/sar2opt/trainB" --img_size=512 --resume "/NAS_data/hjf/JiTcolor/checkpoints/SAR2Opt/controlJiT/round1"
 
+CUDA_VISIBLE_DEVICES=5 torchrun --nproc_per_node=1 --master-port=29508 main_jit.py \
+--model JiT-L/16 \
+--img_size 512 \
+--batch_size 4 \
+--output_dir "/NAS_data/hjf/JiTcolor/checkpoints/SAR2Opt/controlJiT/JiT-L16" \
+--sar_train_path "/NAS_data/yjy/Parallel-GAN-main/Parallel-GAN-main/datasets/sar2opt/trainA" \
+--opt_train_path "/NAS_data/yjy/Parallel-GAN-main/Parallel-GAN-main/datasets/sar2opt/trainB"
+
 ### Train on GF3:
 
 CUDA_VISIBLE_DEVICES=7 torchrun --nproc_per_node=1 --master-port=29505 main_jit.py --output_dir "/NAS_data/hjf/JiTcolor/checkpoints/GF3/controlJiT/round1" --sar_train_path="/NAS_data/yjy/GF3_High_Res/trainA" --opt_train_path="/NAS_data/yjy/GF3_High_Res/trainB" --img_size=256
