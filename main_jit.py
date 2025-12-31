@@ -93,6 +93,8 @@ def get_args_parser():
     parser.add_argument('--evaluate_gen', action='store_true')
     parser.add_argument('--gen_bsz', type=int, default=256,
                         help='Generation batch size')
+    parser.add_argument('--use_hint_infer', action='store_true',
+                        help='Use sampled color prompts during inference')
 
     # dataset
     parser.add_argument('--sar_train_path', default='/NAS_data/yjy/Parallel-GAN-main/Parallel-GAN-main/datasets/sar2opt/trainA', type=str,
