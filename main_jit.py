@@ -9,7 +9,6 @@ import tqdm
 import torch
 import torch.backends.cudnn as cudnn
 from torch.utils.tensorboard import SummaryWriter
-import torchvision.transforms as transforms
 import util.misc as misc
 
 import copy
@@ -17,6 +16,12 @@ from engine_jit import train_one_epoch, evaluate
 
 from denoiser import Denoiser
 from util.datasets import PairedImageDirDataset
+from util.paired_transforms import (
+    PairedCompose,
+    PairedPILToTensor,
+    PairedRandomHorizontalFlip,
+    PairedResize,
+)
 
 
 def get_args_parser():
@@ -144,10 +149,10 @@ def main(args):
         log_writer = None
 
     # Data augmentation transforms
-    transform_train = transforms.Compose([
-        transforms.Resize((args.img_size, args.img_size)),
-        transforms.RandomHorizontalFlip(),
-        transforms.PILToTensor()
+    transform_train = PairedCompose([
+        PairedResize((args.img_size, args.img_size)),
+        PairedRandomHorizontalFlip(),
+        PairedPILToTensor(),
     ])
 
     dataset_train = PairedImageDirDataset(
