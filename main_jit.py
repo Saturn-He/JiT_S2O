@@ -2,6 +2,7 @@ import argparse
 import datetime
 import numpy as np
 import os
+import random
 import time
 from pathlib import Path
 import tqdm
@@ -10,6 +11,7 @@ import torch
 import torch.backends.cudnn as cudnn
 from torch.utils.tensorboard import SummaryWriter
 import torchvision.transforms as transforms
+import torchvision.transforms.functional as F
 import util.misc as misc
 
 import copy
@@ -17,6 +19,22 @@ from engine_jit import train_one_epoch, evaluate
 
 from denoiser import Denoiser
 from util.datasets import PairedImageDirDataset
+
+
+class PairedTransform:
+    def __init__(self, image_size, hflip_prob=0.5):
+        self.image_size = image_size
+        self.hflip_prob = hflip_prob
+
+    def __call__(self, sar_img, opt_img):
+        sar_img = F.resize(sar_img, [self.image_size, self.image_size])
+        opt_img = F.resize(opt_img, [self.image_size, self.image_size])
+        if random.random() < self.hflip_prob:
+            sar_img = F.hflip(sar_img)
+            opt_img = F.hflip(opt_img)
+        sar_img = F.pil_to_tensor(sar_img)
+        opt_img = F.pil_to_tensor(opt_img)
+        return sar_img, opt_img
 
 
 def get_args_parser():
@@ -144,11 +162,10 @@ def main(args):
         log_writer = None
 
     # Data augmentation transforms
-    transform_train = transforms.Compose([
-        transforms.Resize((args.img_size, args.img_size)),
-        transforms.RandomHorizontalFlip(),
-        transforms.PILToTensor()
-    ])
+    transform_train = PairedTransform(
+        image_size=args.img_size,
+        hflip_prob=0.5,
+    )
 
     dataset_train = PairedImageDirDataset(
         args.sar_train_path,
