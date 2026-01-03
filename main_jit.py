@@ -10,6 +10,7 @@ import torch
 import torch.backends.cudnn as cudnn
 from torch.utils.tensorboard import SummaryWriter
 import torchvision.transforms as transforms
+from torchvision.transforms import functional as F
 import util.misc as misc
 
 import copy
@@ -18,6 +19,23 @@ from engine_jit import train_one_epoch, evaluate
 from denoiser import Denoiser
 from util.datasets import PairedImageDirDataset
 
+
+class PairedTrainTransform:
+    def __init__(self, img_size, flip_prob=0.5):
+        self.img_size = img_size
+        self.flip_prob = flip_prob
+        self.to_tensor = transforms.PILToTensor()
+
+    def __call__(self, sar_img, opt_img):
+        sar_img = F.resize(sar_img, [self.img_size, self.img_size])
+        opt_img = F.resize(opt_img, [self.img_size, self.img_size])
+        if torch.rand(1).item() < self.flip_prob:
+            sar_img = F.hflip(sar_img)
+            opt_img = F.hflip(opt_img)
+        sar_img = self.to_tensor(sar_img)
+        opt_img = self.to_tensor(opt_img)
+        return sar_img, opt_img
+        
 
 def get_args_parser():
     parser = argparse.ArgumentParser('JiT', add_help=False)
@@ -143,12 +161,8 @@ def main(args):
     else:
         log_writer = None
 
-    # Data augmentation transforms
-    transform_train = transforms.Compose([
-        transforms.Resize((args.img_size, args.img_size)),
-        transforms.RandomHorizontalFlip(),
-        transforms.PILToTensor()
-    ])
+    # Data augmentation transforms (paired for SAR/OPT consistency)
+    transform_train = PairedTrainTransform(args.img_size)
 
     dataset_train = PairedImageDirDataset(
         args.sar_train_path,
